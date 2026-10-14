@@ -1,0 +1,40 @@
+name: Portable pool build
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            platform: linux/amd64
+          - runner: ubuntu-24.04-arm
+            platform: linux/arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify image tag and upstream source selection
+        run: python3 -m unittest discover -s tests -p test_build_inputs.py -v
+      - uses: docker/setup-buildx-action@v3
+      - name: Build and test portable pool on native architecture
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          push: false
+          load: true
+          tags: ecash-ckpool-portability:test
+          build-args: |
+            SOURCE_REF=18b38ad886a4c7a323b5f9bdcf761704c669c223
+      - name: Verify source identity and executable startup
+        run: |
+          docker run --rm --entrypoint /bin/cat ecash-ckpool-portability:test /usr/share/doc/ecash-ckpool-solo/source-commit > source-commit.txt
+          test "$(cat source-commit.txt)" = 18b38ad886a4c7a323b5f9bdcf761704c669c223
+          docker run --rm ecash-ckpool-portability:test --help
