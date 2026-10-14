@@ -3,6 +3,17 @@ on:
   push:
     tags:
       - "*"
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: New image tag, independent of the upstream source ref
+        required: true
+        type: string
+      source_ref:
+        description: Upstream eCash commit or ref (defaults to 18b38ad)
+        required: false
+        default: "18b38ad"
+        type: string
 
 jobs:
   build:
@@ -12,11 +23,13 @@ jobs:
       contents: read
       packages: write
     steps:
-      - name: Set TAG
-        run: |
-          echo "TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
-
       - uses: actions/checkout@v4
+      - name: Resolve image tag and upstream source independently
+        env:
+          BUILD_EVENT: ${{ github.event_name }}
+          IMAGE_TAG_INPUT: ${{ github.event_name == 'workflow_dispatch' && inputs.image_tag || github.ref_name }}
+          SOURCE_REF_INPUT: ${{ inputs.source_ref }}
+        run: python3 scripts/resolve-build-inputs.py >> "$GITHUB_ENV"
 
       - name: Login to GitHub Container Registry
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.repository_owner }}" --password-stdin
@@ -29,6 +42,6 @@ jobs:
           OWNER_LC="$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')"
           docker buildx build \
             --platform linux/amd64,linux/arm64 \
-            --build-arg VERSION=${{ env.TAG }} \
-            --tag ghcr.io/${OWNER_LC}/ecash-ckpool-solo:${{ env.TAG }} \
+            --build-arg "SOURCE_REF=${SOURCE_REF}" \
+            --tag "ghcr.io/${OWNER_LC}/ecash-ckpool-solo:${TAG}" \
             --push .
